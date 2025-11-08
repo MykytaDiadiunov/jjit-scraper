@@ -1,3 +1,5 @@
+# Simple `justjoin.it` scraper 
+
 ## Installation
 Install all required packages
 ```

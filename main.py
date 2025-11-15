@@ -18,52 +18,59 @@ def main():
         urls_to_parce = json.load(f)
 
         offers_data: list = []
-        for url in urls_to_parce:
-            try:
-                offer_data = get_offer_data_by_url(url)
-                offers_data.append(offer_data)
-            except Exception as e:
-                print(f"main: {e}")
-            finally:
-                print("main: wait for 1s before next page")
-                time.sleep(1)
+        with requests.Session() as session:
+            for url in urls_to_parce:
+                try:
+                    offer_data = get_offer_data_by_url(url, session)
+                    offers_data.append(offer_data)
+                except Exception as e:
+                    print(f"main: {e}")
+                finally:
+                    print("main: wait for 1s before next page")
+                    time.sleep(1)
 
-        offers_df = pd.DataFrame(offers_data)
-
-        offers_df.to_excel(EXEL_PATH, index=False)
-        print("main: finished and creating offers Excel file")
-
-
-def get_offer_data_by_url(url: str) -> dict:
+def get_offer_data_by_url(url: str, session: requests.Session) -> dict:
     offer_id = url.split(URL_BASE)[-1]
 
     print(f"get_offer_data_by_url: starting scraping page with id: {offer_id}")
 
-    response: requests.Response = requests.get(f"{BASE_API_URL}/{offer_id}")
-    if response.status_code != 200:
-        raise Exception(
-            f"url with id {offer_id} returned an error {response.status_code}"
-        )
+    response = session.get(f"{BASE_API_URL}/{offer_id}")
+    response.raise_for_status()
 
-    response_in_json = response.json()
+    raw_offer_data = response.json()
 
-    salary_data = response_in_json.get("employmentTypes")[0]
-
-    result = {
-        "title": response_in_json.get("title"),
-        "experience_level": response_in_json.get("experienceLevel").get("label"),
-        "salary_by": salary_data.get("unit"),
-        "salary_value_from": salary_data.get("fromPln"),
-        "salary_value_to": salary_data.get("toPln"),
-        "contract_type": salary_data.get("label"),
-        "company_city": response_in_json.get("city"),
-        "working_time": response_in_json.get("workingTime").get("label"),
-    }
+    result = normalize_offer_response(raw_offer_data)
 
     print(
         f"get_offer_data_by_url: completed scraping page with title: {result.get('title')}"
     )
     return result
+
+def normalize_offer_response(raw_offer_data: dict) -> dict:
+    salary_data = get_salary_data(raw_offer_data)
+
+    return {
+        "title": raw_offer_data.get("title"),
+        "experience_level": get_label(raw_offer_data.get("experienceLevel")),
+        "salary_by": salary_data.get("unit"),
+        "salary_value_from": salary_data.get("fromPln"),
+        "salary_value_to": salary_data.get("toPln"),
+        "contract_type": salary_data.get("label"),
+        "company_city": raw_offer_data.get("city"),
+        "working_time": get_label(raw_offer_data.get("workingTime")),
+    }
+
+def get_salary_data(raw_offer_data: dict) -> dict:
+    employment_types = raw_offer_data.get("employmentTypes")
+    salary_data = {}
+
+    if employment_types and isinstance(employment_types, list) and len(employment_types) > 0:
+        salary_data = employment_types[0]
+
+    return salary_data
+
+def get_label(obj: dict) -> any:
+    return obj.get("label") if obj else None
 
 
 if __name__ == "__main__":
